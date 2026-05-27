@@ -3,54 +3,87 @@ package tunetalk;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.HashMap;
+import java.util.Map;
 
 public class HostServer {
-    // 通訊錄：用來記錄所有連線進來的 Client (格式為 IP:Port)
-    private static Set<String> clientList = new HashSet<>();
+    // 記錄所有連線進來的 Client (Key = IP:Port, Value = 暱稱)
+    private static Map<String, String> clientNames = new HashMap<>();
 
     public static void main(String[] args) {
         try {
-            // 房主固定在 Port 5000 接收訊息
             DatagramSocket socket = new DatagramSocket(5000);
             byte[] buffer = new byte[4096];
 
-            System.out.println("【房主伺服器（純語音轉發版）】已啟動 (Port: 5000)，等待朋友連線...");
+            System.out.println("【房主伺服器】已啟動 (Port: 5000)，等待連線...");
 
             while (true) {
-                // 1. 接收任何人的語音封包
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                 socket.receive(packet);
 
                 String senderIP = packet.getAddress().getHostAddress();
                 int senderPort = packet.getPort();
-                String clientKey = senderIP + ":" + senderPort; // 組合出獨一無二的 ID
+                String clientKey = senderIP + ":" + senderPort;
+                
+                String message = new String(packet.getData(), 0, packet.getLength());
+                boolean listChanged = false;
 
-                // 2. 如果是新朋友，加進通訊錄
-                if (clientList.add(clientKey)) {
-                    System.out.println("➡️ 新朋友加入房間: " + clientKey);
+                // 1. 處理新朋友加入
+                if (message.startsWith("[JOIN]")) {
+                    String nickname = message.substring(6).trim();
+                    if (nickname.isEmpty()) nickname = "無名氏";
+                    
+                    clientNames.put(clientKey, nickname);
+                    System.out.println("➡️ 新朋友加入: " + nickname + " (" + clientKey + ")");
+                    listChanged = true;
+                } 
+                // 🌟 2. 處理朋友主動退出房間
+                else if (message.startsWith("[LEAVE]")) {
+                    String nickname = clientNames.remove(clientKey);
+                    System.out.println("⬅️ 朋友離開房間: " + (nickname != null ? nickname : "未知") + " (" + clientKey + ")");
+                    listChanged = true;
+                }
+                // 3. 預防機制
+                else if (!clientNames.containsKey(clientKey)) {
+                    clientNames.put(clientKey, "匿名_" + senderPort);
+                    listChanged = true;
                 }
 
-                // 💡 為了不破壞音訊，我們不把 packet 轉成 String 印出了
-                // System.out.println("轉發語音中，來自: " + clientKey + "，大小: " + packet.getLength() + " bytes");
+                // 如果名單有變動，廣播最新的「暱稱名單」給目前在線的所有人
+                if (listChanged) {
+                    broadcastUserList(socket);
+                }
 
-                // 3. 核心邏輯：原封不動地轉發純位元組給「除了發送者以外」的所有人
-                for (String client : clientList) {
-                    if (!client.equals(clientKey)) {
-                        String[] parts = client.split(":");
-                        InetAddress targetIp = InetAddress.getByName(parts[0]);
-                        int targetPort = Integer.parseInt(parts[1]);
+                // 轉發語音邏輯 (過濾掉控制文字封包，只轉發純聲音位元組)
+                if (!message.startsWith("[JOIN]") && !message.startsWith("[LEAVE]") && !message.startsWith("[USER_LIST]")) {
+                    for (String client : clientNames.keySet()) {
+                        if (!client.equals(clientKey)) {
+                            String[] parts = client.split(":");
+                            InetAddress targetIp = InetAddress.getByName(parts[0]);
+                            int targetPort = Integer.parseInt(parts[1]);
 
-                        // 🌟 關鍵修正：直接轉發 packet.getData()，不加任何打字訊息，確保音訊格式完美對齊
-                        DatagramPacket relayPacket = new DatagramPacket(
-                                packet.getData(), packet.getLength(), targetIp, targetPort);
-                        socket.send(relayPacket);
+                            DatagramPacket relayPacket = new DatagramPacket(
+                                    packet.getData(), packet.getLength(), targetIp, targetPort);
+                            socket.send(relayPacket);
+                        }
                     }
                 }
             }
         } catch (Exception e) {
             e.printStackTrace();
+        }
+    }
+
+    private static void broadcastUserList(DatagramSocket socket) throws Exception {
+        // 如果房間空了，傳送提示字串
+        String listMsg = "[USER_LIST]" + (clientNames.isEmpty() ? "暫無使用者" : String.join("\n", clientNames.values()));
+        byte[] listData = listMsg.getBytes();
+
+        for (String client : clientNames.keySet()) {
+            String[] parts = client.split(":");
+            InetAddress targetIp = InetAddress.getByName(parts[0]);
+            int targetPort = Integer.parseInt(parts[1]);
+            socket.send(new DatagramPacket(listData, listData.length, targetIp, targetPort));
         }
     }
 }

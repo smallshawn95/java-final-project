@@ -1,0 +1,8 @@
+GUI:
+創建房間:同時執行兩個檔案
+加入房間:run client;
+撥放音樂
+-----
+指令:
+編譯:javac -cp ".;tunetalk\*" tunetalk\*.java
+執行:java --enable-native-access=ALL-UNNAMED -cp ".;tunetalk\*" tunetalk.TuneTalkGUI
