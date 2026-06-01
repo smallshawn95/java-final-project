@@ -1,6 +1,7 @@
 package tunetalk;
 
 import javax.sound.sampled.*;
+import java.io.File;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
@@ -16,9 +17,12 @@ public class VoiceClient {
     private String targetIp;
     private final int hostPort = 5000;
 
-    // 動態獨立音軌管理與音量記憶
     private final Map<String, SourceDataLine> userSpeakers = new ConcurrentHashMap<>();
     private final Map<String, Float> userVolumes = new ConcurrentHashMap<>(); 
+    
+    // BGM 本地推流專用變數
+    private volatile boolean isMusicPlaying = false;
+    private Thread musicThread;
 
     private static AudioFormat getAudioFormat() {
         return new AudioFormat(16000.0f, 16, 1, true, false);
@@ -100,10 +104,16 @@ public class VoiceClient {
             byte[] initData = joinMsg.getBytes("UTF-8");
             socket.send(new DatagramPacket(initData, initData.length, hostIP, hostPort));
 
-            DataLine.Info micInfo = new DataLine.Info(TargetDataLine.class, format);
-            microphone = (TargetDataLine) AudioSystem.getLine(micInfo);
-            microphone.open(format);
-            microphone.start();
+            // 🌟 修正：加入麥克風防護機制
+            try {
+                DataLine.Info micInfo = new DataLine.Info(TargetDataLine.class, format);
+                microphone = (TargetDataLine) AudioSystem.getLine(micInfo);
+                microphone.open(format);
+                microphone.start();
+            } catch (Exception micEx) {
+                System.out.println("⚠️ 無法啟動麥克風，已自動切換為純收聽模式 (或您的麥克風被其他軟體佔用)。");
+                microphone = null;
+            }
             
             new Thread(() -> {
                 try {
@@ -115,17 +125,21 @@ public class VoiceClient {
                 } catch (Exception e) {}
             }).start();
 
+            // 🌟 修正：麥克風發送迴圈保護
             byte[] micBuffer = new byte[4096];
             while (isRunning) {
-                int bytesRead = microphone.read(micBuffer, 0, micBuffer.length);
-                if (bytesRead > 0 && isRunning) {
-                    if (!isMuted) {
+                if (microphone != null) {
+                    int bytesRead = microphone.read(micBuffer, 0, micBuffer.length);
+                    if (bytesRead > 0 && isRunning && !isMuted) {
                         int validRead = (bytesRead / frameSize) * frameSize;
                         if (validRead > 0) {
                             DatagramPacket packet = new DatagramPacket(micBuffer, validRead, hostIP, hostPort);
                             socket.send(packet);
                         }
                     }
+                } else {
+                    // 如果沒有麥克風，讓迴圈休眠避免吃光 CPU
+                    try { Thread.sleep(500); } catch (Exception e) {}
                 }
             }
         } catch (Exception e) {
@@ -133,8 +147,76 @@ public class VoiceClient {
         }
     }
 
+    // 讀取本地 WAV 並廣播
+    public void startMusicStream(String wavFilePath) {
+        if (isMusicPlaying) return;
+        isMusicPlaying = true;
+
+        musicThread = new Thread(() -> {
+            try {
+                System.out.println("🎵 準備載入音樂檔案: " + wavFilePath);
+                File audioFile = new File(wavFilePath);
+                AudioInputStream rawStream = AudioSystem.getAudioInputStream(audioFile);
+                AudioFormat targetFormat = getAudioFormat();
+                
+                AudioInputStream audioStream = AudioSystem.getAudioInputStream(targetFormat, rawStream);
+
+                DataLine.Info info = new DataLine.Info(SourceDataLine.class, targetFormat);
+                SourceDataLine localBgmSpeaker = (SourceDataLine) AudioSystem.getLine(info);
+                localBgmSpeaker.open(targetFormat);
+                localBgmSpeaker.start();
+
+                byte[] prefix = "[AUDIO]".getBytes("UTF-8");
+                String bgmName = "BGM 🎵";
+                byte[] nameBytes = bgmName.getBytes("UTF-8");
+                
+                byte[] buffer = new byte[4096];
+                int bytesRead;
+
+                System.out.println("▶️ 開始向伺服器廣播音樂！");
+
+                while (isMusicPlaying && (bytesRead = audioStream.read(buffer, 0, buffer.length)) != -1) {
+                    localBgmSpeaker.write(buffer, 0, bytesRead); 
+
+                    int packetSize = prefix.length + 1 + nameBytes.length + bytesRead;
+                    byte[] forwardBuffer = new byte[packetSize];
+                    System.arraycopy(prefix, 0, forwardBuffer, 0, prefix.length);
+                    forwardBuffer[prefix.length] = (byte) nameBytes.length;
+                    System.arraycopy(nameBytes, 0, forwardBuffer, prefix.length + 1, nameBytes.length);
+                    System.arraycopy(buffer, 0, forwardBuffer, prefix.length + 1 + nameBytes.length, bytesRead);
+
+                    if (socket != null && !socket.isClosed()) {
+                        InetAddress hostAddress = InetAddress.getByName(targetIp);
+                        socket.send(new DatagramPacket(forwardBuffer, forwardBuffer.length, hostAddress, hostPort));
+                    }
+                }
+
+                localBgmSpeaker.drain();
+                localBgmSpeaker.stop();
+                localBgmSpeaker.close();
+                audioStream.close();
+                isMusicPlaying = false;
+                System.out.println("⏹️ 音樂廣播已結束。");
+
+            } catch (UnsupportedAudioFileException uae) {
+                System.out.println("❌ 錯誤：不支援的音訊格式，請確保是標準的 WAV 檔案。");
+                isMusicPlaying = false;
+            } catch (Exception e) {
+                e.printStackTrace();
+                isMusicPlaying = false;
+            }
+        });
+        musicThread.start();
+    }
+
+    public void stopMusicStream() {
+        isMusicPlaying = false;
+    }
+
     public void stopClient() {
         this.isRunning = false;
+        stopMusicStream(); 
+        
         try {
             if (socket != null && !socket.isClosed() && targetIp != null) {
                 byte[] leaveData = "[LEAVE]".getBytes("UTF-8");

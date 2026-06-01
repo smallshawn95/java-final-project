@@ -25,7 +25,6 @@ public class HostServer {
         isRunning = true;
         clients.clear();
 
-        // 啟動清理斷線使用者的執行緒
         Thread cleanerThread = new Thread(() -> {
             while (isRunning) {
                 try {
@@ -55,59 +54,59 @@ public class HostServer {
                 System.out.println("【房主伺服器】已啟動 (Port: 5000)...");
 
                 while (isRunning) {
-                    DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
-                    socket.receive(packet); 
+                    try { // 🌟 新增內部 try-catch：防止單一封包錯誤導致伺服器全毀
+                        DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+                        socket.receive(packet); 
 
-                    String senderKey = packet.getAddress().getHostAddress() + ":" + packet.getPort();
-                    String message = new String(packet.getData(), 0, Math.min(packet.getLength(), 100), "UTF-8");
+                        // 🌟 修正：改用 "#" 作為分隔符，完美避開 IPv6 的冒號衝突
+                        String senderKey = packet.getAddress().getHostAddress() + "#" + packet.getPort();
+                        String message = new String(packet.getData(), 0, Math.min(packet.getLength(), 100), "UTF-8");
 
-                    // 1. 處理控制指令
-                    if (message.startsWith("[JOIN]")) {
-                        String nickname = message.substring(6).trim();
-                        clients.put(senderKey, new ClientInfo(nickname));
-                        System.out.println("✅ " + nickname + " 加入房間");
-                        broadcastUserList(socket);
-                        continue; 
-                    } else if (message.startsWith("[LEAVE]")) {
-                        if (clients.containsKey(senderKey)) {
-                            System.out.println("👋 " + clients.get(senderKey).nickname + " 離開房間");
-                            clients.remove(senderKey);
+                        if (message.startsWith("[JOIN]")) {
+                            String nickname = message.substring(6).trim();
+                            clients.put(senderKey, new ClientInfo(nickname));
+                            System.out.println("✅ " + nickname + " 加入房間");
                             broadcastUserList(socket);
+                            continue; 
+                        } else if (message.startsWith("[LEAVE]")) {
+                            if (clients.containsKey(senderKey)) {
+                                System.out.println("👋 " + clients.get(senderKey).nickname + " 離開房間");
+                                clients.remove(senderKey);
+                                broadcastUserList(socket);
+                            }
+                            continue;
+                        } else if (message.startsWith("[PING]")) {
+                            if (clients.containsKey(senderKey)) {
+                                clients.get(senderKey).lastActiveTime = System.currentTimeMillis();
+                            }
+                            continue;
                         }
-                        continue;
-                    } else if (message.startsWith("[PING]")) {
+
                         if (clients.containsKey(senderKey)) {
-                            clients.get(senderKey).lastActiveTime = System.currentTimeMillis();
-                        }
-                        continue;
-                    }
+                            ClientInfo senderInfo = clients.get(senderKey);
+                            senderInfo.lastActiveTime = System.currentTimeMillis();
 
-                    // 2. 處理語音資料：封裝發言者資訊並廣播
-                    if (clients.containsKey(senderKey)) {
-                        ClientInfo senderInfo = clients.get(senderKey);
-                        senderInfo.lastActiveTime = System.currentTimeMillis();
+                            byte[] prefix = "[AUDIO]".getBytes("UTF-8");
+                            byte[] nameBytes = senderInfo.nickname.getBytes("UTF-8");
+                            int audioLen = packet.getLength();
+                            
+                            byte[] forwardBuffer = new byte[prefix.length + 1 + nameBytes.length + audioLen];
+                            System.arraycopy(prefix, 0, forwardBuffer, 0, prefix.length);
+                            forwardBuffer[prefix.length] = (byte) nameBytes.length;
+                            System.arraycopy(nameBytes, 0, forwardBuffer, prefix.length + 1, nameBytes.length);
+                            System.arraycopy(packet.getData(), 0, forwardBuffer, prefix.length + 1 + nameBytes.length, audioLen);
 
-                        // 建立帶有身分標頭的特殊語音封包
-                        byte[] prefix = "[AUDIO]".getBytes("UTF-8");
-                        byte[] nameBytes = senderInfo.nickname.getBytes("UTF-8");
-                        int audioLen = packet.getLength();
-                        
-                        // 新結構: [AUDIO](7 bytes) + 名字長度(1 byte) + 名字字串(N bytes) + 聲音PCM數據
-                        byte[] forwardBuffer = new byte[prefix.length + 1 + nameBytes.length + audioLen];
-                        System.arraycopy(prefix, 0, forwardBuffer, 0, prefix.length);
-                        forwardBuffer[prefix.length] = (byte) nameBytes.length;
-                        System.arraycopy(nameBytes, 0, forwardBuffer, prefix.length + 1, nameBytes.length);
-                        System.arraycopy(packet.getData(), 0, forwardBuffer, prefix.length + 1 + nameBytes.length, audioLen);
-
-                        // 廣播給房間內的其他所有人
-                        for (String targetKey : clients.keySet()) {
-                            if (!targetKey.equals(senderKey)) {
-                                String[] parts = targetKey.split(":");
-                                InetAddress targetIp = InetAddress.getByName(parts[0]);
-                                int targetPort = Integer.parseInt(parts[1]);
-                                socket.send(new DatagramPacket(forwardBuffer, forwardBuffer.length, targetIp, targetPort));
+                            for (String targetKey : clients.keySet()) {
+                                if (!targetKey.equals(senderKey)) {
+                                    String[] parts = targetKey.split("#"); // 🌟 對應上述的 "#"
+                                    InetAddress targetIp = InetAddress.getByName(parts[0]);
+                                    int targetPort = Integer.parseInt(parts[1]);
+                                    socket.send(new DatagramPacket(forwardBuffer, forwardBuffer.length, targetIp, targetPort));
+                                }
                             }
                         }
+                    } catch (Exception innerEx) {
+                        if (isRunning) System.out.println("⚠️ 處理封包時發生小錯誤，但伺服器持續運行中: " + innerEx.getMessage());
                     }
                 }
             } catch (Exception e) {
@@ -139,7 +138,7 @@ public class HostServer {
         byte[] listData = listMsg.getBytes("UTF-8");
 
         for (String clientKey : clients.keySet()) {
-            String[] parts = clientKey.split(":");
+            String[] parts = clientKey.split("#"); // 🌟 對應上述的 "#"
             InetAddress targetIp = InetAddress.getByName(parts[0]);
             int targetPort = Integer.parseInt(parts[1]);
             socket.send(new DatagramPacket(listData, listData.length, targetIp, targetPort));

@@ -2,7 +2,9 @@ package tunetalk;
 
 import com.formdev.flatlaf.FlatDarkLaf;
 import javax.swing.*;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
+import java.io.File;
 
 public class TuneTalkGUI extends JFrame {
 
@@ -16,13 +18,18 @@ public class TuneTalkGUI extends JFrame {
     private JPanel userListPanel;
     private JLabel roomTitleLabel;
     private JButton btnLeaveRoom;
+    
+    // BGM 本地推流控制介面
+    private JLabel selectedFileLabel;
+    private JButton btnSelectMusic, btnPlayMusic, btnStopMusic;
+    private String currentMusicPath = "";
 
     private VoiceClient voiceClient; 
     private boolean isHost = false;
 
     public TuneTalkGUI() {
         setTitle("TuneTalk 語音聊天室 Pro");
-        setSize(450, 360); 
+        setSize(500, 420); 
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
 
@@ -109,7 +116,49 @@ public class TuneTalkGUI extends JFrame {
         scrollPane.setBorder(BorderFactory.createTitledBorder("房間成員名單與個人音量調節"));
         panel.add(scrollPane, BorderLayout.CENTER);
 
-        JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 15, 0));
+        // --- 底部控制區 (包含語音與音樂廣播) ---
+        JPanel bottomContainer = new JPanel(new GridLayout(2, 1, 5, 5));
+
+        // 1. 本地音樂推流控制列
+        JPanel musicPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 5, 0));
+        
+        btnSelectMusic = new JButton("📂 選擇 WAV");
+        btnPlayMusic = new JButton("▶ 廣播");
+        btnStopMusic = new JButton("⏹ 停止");
+        selectedFileLabel = new JLabel("未選擇檔案...");
+        selectedFileLabel.setPreferredSize(new Dimension(150, 20));
+        
+        btnSelectMusic.addActionListener(e -> {
+            JFileChooser fileChooser = new JFileChooser();
+            fileChooser.setFileFilter(new FileNameExtensionFilter("WAV 音訊檔 (*.wav)", "wav"));
+            int result = fileChooser.showOpenDialog(this);
+            if (result == JFileChooser.APPROVE_OPTION) {
+                File selectedFile = fileChooser.getSelectedFile();
+                currentMusicPath = selectedFile.getAbsolutePath();
+                selectedFileLabel.setText(selectedFile.getName());
+                selectedFileLabel.setToolTipText(currentMusicPath);
+            }
+        });
+        
+        btnPlayMusic.addActionListener(e -> {
+            if (!currentMusicPath.isEmpty() && voiceClient != null) {
+                voiceClient.startMusicStream(currentMusicPath);
+            } else {
+                JOptionPane.showMessageDialog(this, "請先選擇一個 WAV 檔案！", "提示", JOptionPane.WARNING_MESSAGE);
+            }
+        });
+        
+        btnStopMusic.addActionListener(e -> {
+            if (voiceClient != null) voiceClient.stopMusicStream();
+        });
+
+        musicPanel.add(btnSelectMusic);
+        musicPanel.add(selectedFileLabel);
+        musicPanel.add(btnPlayMusic);
+        musicPanel.add(btnStopMusic);
+
+        // 2. 語音控制列
+        JPanel voicePanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 15, 0));
         
         btnMute = new JToggleButton("麥克風：開啟");
         btnMute.setFont(new Font("微軟正黑體", Font.BOLD, 14));
@@ -127,9 +176,13 @@ public class TuneTalkGUI extends JFrame {
         btnLeaveRoom.putClientProperty("JButton.buttonType", "roundRect");
         btnLeaveRoom.addActionListener(e -> leaveRoom());
         
-        bottomPanel.add(btnMute);
-        bottomPanel.add(btnLeaveRoom);
-        panel.add(bottomPanel, BorderLayout.SOUTH);
+        voicePanel.add(btnMute);
+        voicePanel.add(btnLeaveRoom);
+
+        bottomContainer.add(musicPanel);
+        bottomContainer.add(voicePanel);
+        
+        panel.add(bottomContainer, BorderLayout.SOUTH);
 
         return panel;
     }
@@ -148,7 +201,6 @@ public class TuneTalkGUI extends JFrame {
                 row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
                 row.setBorder(BorderFactory.createEmptyBorder(5, 8, 5, 8));
 
-                // 移除燈號，改用簡單的圖示
                 JLabel nameLabel = new JLabel("👤 " + trimmedName);
                 nameLabel.setFont(new Font("微軟正黑體", Font.PLAIN, 14));
 
@@ -199,6 +251,9 @@ public class TuneTalkGUI extends JFrame {
         btnMute.setSelected(false);
         btnMute.setText("麥克風：開啟");
         btnMute.setForeground(UIManager.getColor("Button.foreground"));
+        
+        currentMusicPath = "";
+        selectedFileLabel.setText("未選擇檔案...");
         
         userListPanel.removeAll();
         cardLayout.show(mainPanel, "LOGIN");
