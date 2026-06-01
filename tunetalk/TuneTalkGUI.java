@@ -7,43 +7,38 @@ import java.awt.*;
 public class TuneTalkGUI extends JFrame {
 
     private CardLayout cardLayout;
-    private JPanel mainPanel; // 裝載所有卡片的主容器
-    
-    // 登入面板元件
+    private JPanel mainPanel; 
+    private JToggleButton btnMute;
+
     private JTextField ipField, nameField;
     private JButton btnCreateRoom, btnJoinRoom;
     
-    // 房間內部面板元件
-    private JTextArea userListArea;
+    private JPanel userListPanel;
     private JLabel roomTitleLabel;
     private JButton btnLeaveRoom;
 
-    private VoiceClient voiceClient; // 保持目前的 Client 物件引用
+    private VoiceClient voiceClient; 
     private boolean isHost = false;
 
     public TuneTalkGUI() {
-        setTitle("TuneTalk 語音聊天室");
-        setSize(420, 320); // 調整大小讓介面比例更好看
+        setTitle("TuneTalk 語音聊天室 Pro");
+        setSize(450, 360); 
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
 
-        // 🌟 核心：設定 CardLayout 佈局
         cardLayout = new CardLayout();
         mainPanel = new JPanel(cardLayout);
 
-        // 建立兩個獨立面板
         JPanel loginPanel = createLoginPanel();
         JPanel roomPanel = createRoomPanel();
 
-        // 把面板當作卡片塞進主容器
         mainPanel.add(loginPanel, "LOGIN");
         mainPanel.add(roomPanel, "ROOM");
 
         add(mainPanel);
-        cardLayout.show(mainPanel, "LOGIN"); // 預設顯示登入畫面
+        cardLayout.show(mainPanel, "LOGIN"); 
     }
 
-    // 🌟 卡片一：進入房間前的 GUI
     private JPanel createLoginPanel() {
         JPanel panel = new JPanel(new GridLayout(4, 1, 5, 10));
         panel.setBorder(BorderFactory.createEmptyBorder(25, 40, 25, 40));
@@ -77,15 +72,11 @@ public class TuneTalkGUI extends JFrame {
         panel.add(btnCreateRoom);
         panel.add(btnJoinRoom);
 
-        // 按鈕事件設定
         btnCreateRoom.addActionListener(e -> {
             String nickname = nameField.getText().trim();
             if (nickname.isEmpty()) nickname = "房主";
-            
             isHost = true;
-            // 啟動房主伺服器
-            new Thread(() -> HostServer.main(null)).start();
-            // 自己連進去
+            HostServer.startServer();
             enterRoom("127.0.0.1", nickname);
         });
 
@@ -97,7 +88,6 @@ public class TuneTalkGUI extends JFrame {
             }
             String nickname = nameField.getText().trim();
             if (nickname.isEmpty()) nickname = "匿名者";
-
             isHost = false;
             enterRoom(targetIp, nickname);
         });
@@ -105,63 +95,114 @@ public class TuneTalkGUI extends JFrame {
         return panel;
     }
 
-    // 🌟 卡片二：進入房間後的新 GUI
     private JPanel createRoomPanel() {
         JPanel panel = new JPanel(new BorderLayout(12, 12));
         panel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
 
-        // 上方顯示目前房間狀態
         roomTitleLabel = new JLabel("語音連線中...");
         roomTitleLabel.setFont(new Font("微軟正黑體", Font.BOLD, 15));
         panel.add(roomTitleLabel, BorderLayout.NORTH);
 
-        // 中央顯示在線名單
-        userListArea = new JTextArea();
-        userListArea.setEditable(false);
-        userListArea.setFont(new Font("微軟正黑體", Font.PLAIN, 14));
-        JScrollPane scrollPane = new JScrollPane(userListArea);
-        scrollPane.setBorder(BorderFactory.createTitledBorder("房間成員名單"));
+        userListPanel = new JPanel();
+        userListPanel.setLayout(new BoxLayout(userListPanel, BoxLayout.Y_AXIS));
+        JScrollPane scrollPane = new JScrollPane(userListPanel);
+        scrollPane.setBorder(BorderFactory.createTitledBorder("房間成員名單與個人音量調節"));
         panel.add(scrollPane, BorderLayout.CENTER);
 
-        // 下方放置退出按鈕
+        JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 15, 0));
+        
+        btnMute = new JToggleButton("麥克風：開啟");
+        btnMute.setFont(new Font("微軟正黑體", Font.BOLD, 14));
+        btnMute.addActionListener(e -> {
+            if (voiceClient != null) {
+                boolean muteState = btnMute.isSelected();
+                voiceClient.setMuted(muteState);
+                btnMute.setText(muteState ? "麥克風：靜音 🔇" : "麥克風：開啟 🎙️");
+                btnMute.setForeground(muteState ? Color.RED : UIManager.getColor("Button.foreground"));
+            }
+        });
+
         btnLeaveRoom = new JButton("退出房間");
         btnLeaveRoom.setFont(new Font("微軟正黑體", Font.BOLD, 14));
         btnLeaveRoom.putClientProperty("JButton.buttonType", "roundRect");
-        
-        // 點擊事件：執行退出
         btnLeaveRoom.addActionListener(e -> leaveRoom());
-        panel.add(btnLeaveRoom, BorderLayout.SOUTH);
+        
+        bottomPanel.add(btnMute);
+        bottomPanel.add(btnLeaveRoom);
+        panel.add(bottomPanel, BorderLayout.SOUTH);
 
         return panel;
     }
 
-    // 進入房間的切換動作
+    private void updateUserListUI(String usersStr) {
+        userListPanel.removeAll();
+        if (usersStr.trim().isEmpty() || usersStr.contains("暫無使用者")) {
+            userListPanel.add(new JLabel(" 房間內暫無其他使用者"));
+        } else {
+            String[] names = usersStr.split("\n");
+            for (String name : names) {
+                String trimmedName = name.trim();
+                if (trimmedName.isEmpty()) continue;
+
+                JPanel row = new JPanel(new BorderLayout(10, 0));
+                row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
+                row.setBorder(BorderFactory.createEmptyBorder(5, 8, 5, 8));
+
+                // 移除燈號，改用簡單的圖示
+                JLabel nameLabel = new JLabel("👤 " + trimmedName);
+                nameLabel.setFont(new Font("微軟正黑體", Font.PLAIN, 14));
+
+                int currentVol = 0;
+                if (voiceClient != null) {
+                    currentVol = Math.round(voiceClient.getUserVolume(trimmedName));
+                }
+                JSlider volSlider = new JSlider(-40, 6, currentVol);
+                volSlider.setPreferredSize(new Dimension(130, 20));
+                volSlider.setToolTipText("調整音量");
+                volSlider.addChangeListener(ce -> {
+                    if (voiceClient != null) {
+                        voiceClient.setUserVolume(trimmedName, (float) volSlider.getValue());
+                    }
+                });
+
+                row.add(nameLabel, BorderLayout.CENTER);
+                row.add(volSlider, BorderLayout.EAST);
+                userListPanel.add(row);
+            }
+        }
+        userListPanel.revalidate();
+        userListPanel.repaint();
+    }
+
     private void enterRoom(String ip, String nickname) {
-        voiceClient = new VoiceClient(); // 建立新的客端實例
+        voiceClient = new VoiceClient(); 
         
-        // 啟動客端語音
         new Thread(() -> voiceClient.startClient(ip, nickname, users -> {
-            // 當收到名單更新時，安全的同步回 Swing 執行緒來渲染畫面
-            SwingUtilities.invokeLater(() -> userListArea.setText(users));
+            SwingUtilities.invokeLater(() -> updateUserListUI(users));
         })).start();
 
-        // 🌟 切換卡片畫面到 ROOM
         roomTitleLabel.setText("📍 房主 IP: " + ip + "  |  👤 我的暱稱: " + nickname + (isHost ? " (房主)" : ""));
-        userListArea.setText("正在載入房間成員...");
+        updateUserListUI("正在載入成員...");
+        
         cardLayout.show(mainPanel, "ROOM");
     }
 
-    // 退出房間的切換動作
     private void leaveRoom() {
         if (voiceClient != null) {
-            voiceClient.stopClient(); // 叫客端關閉連線並放開麥克風/喇叭
+            voiceClient.stopClient(); 
             voiceClient = null;
         }
-
-        // 🌟 切換卡片畫面回到 LOGIN
-        userListArea.setText("");
+        if (isHost) {
+            HostServer.stopServer();
+            isHost = false;
+        }
+        btnMute.setSelected(false);
+        btnMute.setText("麥克風：開啟");
+        btnMute.setForeground(UIManager.getColor("Button.foreground"));
+        
+        userListPanel.removeAll();
         cardLayout.show(mainPanel, "LOGIN");
-        JOptionPane.showMessageDialog(this, "已安全退出房間，語音裝置已關閉。", "提示", JOptionPane.INFORMATION_MESSAGE);
+        JOptionPane.showMessageDialog(this, "已安全退出房間，獨立音軌硬體已釋放。", "提示", JOptionPane.INFORMATION_MESSAGE);
     }
 
     public static void main(String[] args) {
