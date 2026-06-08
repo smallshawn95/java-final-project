@@ -54,11 +54,11 @@ public class HostServer {
                 System.out.println("【房主伺服器】已啟動 (Port: 5000)...");
 
                 while (isRunning) {
-                    try { // 🌟 新增內部 try-catch：防止單一封包錯誤導致伺服器全毀
+                    try { 
                         DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                         socket.receive(packet); 
 
-                        // 🌟 修正：改用 "#" 作為分隔符，完美避開 IPv6 的冒號衝突
+                        
                         String senderKey = packet.getAddress().getHostAddress() + "#" + packet.getPort();
                         String message = new String(packet.getData(), 0, Math.min(packet.getLength(), 100), "UTF-8");
 

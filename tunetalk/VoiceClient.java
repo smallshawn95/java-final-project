@@ -125,7 +125,7 @@ public class VoiceClient {
                 } catch (Exception e) {}
             }).start();
 
-            // 🌟 修正：麥克風發送迴圈保護
+            //  修正：麥克風發送迴圈保護
             byte[] micBuffer = new byte[4096];
             while (isRunning) {
                 if (microphone != null) {
@@ -138,7 +138,7 @@ public class VoiceClient {
                         }
                     }
                 } else {
-                    // 如果沒有麥克風，讓迴圈休眠避免吃光 CPU
+                   
                     try { Thread.sleep(500); } catch (Exception e) {}
                 }
             }
