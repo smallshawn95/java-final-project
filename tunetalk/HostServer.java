@@ -34,7 +34,7 @@ public class HostServer {
 
                     for (Map.Entry<String, ClientInfo> entry : clients.entrySet()) {
                         if (now - entry.getValue().lastActiveTime > 10000) {
-                            System.out.println("⚠️ 偵測到斷線，移除: " + entry.getValue().nickname);
+                            System.out.println("偵測到斷線移除: " + entry.getValue().nickname);
                             clients.remove(entry.getKey());
                             listChanged = true;
                         }
@@ -51,7 +51,7 @@ public class HostServer {
             try {
                 socket = new DatagramSocket(5000);
                 byte[] buffer = new byte[8192];
-                System.out.println("【房主伺服器】已啟動 (Port: 5000)...");
+                System.out.println("房主伺服器已啟動 Port: 5000");
 
                 while (isRunning) {
                     try { 
@@ -64,12 +64,12 @@ public class HostServer {
                         if (message.startsWith("[JOIN]")) {
                             String nickname = message.substring(6).trim();
                             clients.put(senderKey, new ClientInfo(nickname));
-                            System.out.println("✅ " + nickname + " 加入房間");
+                            System.out.println(nickname + " 加入房間");
                             broadcastUserList(socket);
                             continue; 
                         } else if (message.startsWith("[LEAVE]")) {
                             if (clients.containsKey(senderKey)) {
-                                System.out.println("👋 " + clients.get(senderKey).nickname + " 離開房間");
+                                System.out.println(clients.get(senderKey).nickname + " 離開房間");
                                 clients.remove(senderKey);
                                 broadcastUserList(socket);
                             }
@@ -79,8 +79,8 @@ public class HostServer {
                                 clients.get(senderKey).lastActiveTime = System.currentTimeMillis();
                             }
                             continue;
-                        // 👇 修正：處理已經包裝好的 BGM 封包 👇
-                        } else if (message.startsWith("[AUDIO]")) {
+                        
+                        } else if (message.startsWith("[AUDIO]") || message.startsWith("[M_CTRL]") || message.startsWith("[M_INFO]")) {
                             if (clients.containsKey(senderKey)) {
                                 clients.get(senderKey).lastActiveTime = System.currentTimeMillis();
                                 for (String targetKey : clients.keySet()) {
@@ -88,15 +88,14 @@ public class HostServer {
                                         String[] parts = targetKey.split("#");
                                         InetAddress targetIp = InetAddress.getByName(parts[0]);
                                         int targetPort = Integer.parseInt(parts[1]);
-                                        // 直接轉發，不重新包裝
+                                        
                                         socket.send(new DatagramPacket(packet.getData(), packet.getLength(), targetIp, targetPort));
                                     }
                                 }
                             }
                             continue;
-                        } // 👆 修正結束 👆
+                        } 
 
-                        // 處理純粹的麥克風音訊，為其包裝標籤與名稱
                         if (clients.containsKey(senderKey)) {
                             ClientInfo senderInfo = clients.get(senderKey);
                             senderInfo.lastActiveTime = System.currentTimeMillis();
@@ -121,13 +120,13 @@ public class HostServer {
                             }
                         }
                     } catch (Exception innerEx) {
-                        if (isRunning) System.out.println("⚠️ 處理封包時發生小錯誤，但伺服器持續運行中: " + innerEx.getMessage());
+                        if (isRunning) System.out.println("處理封包時發生錯誤: " + innerEx.getMessage());
                     }
                 }
             } catch (Exception e) {
                 if (isRunning) e.printStackTrace();
             } finally {
-                System.out.println("【房主伺服器】已完全關閉。");
+                System.out.println("房主伺服器已關閉");
             }
         }).start();
     }
