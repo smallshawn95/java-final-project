@@ -1,6 +1,5 @@
 package tunetalk;
 
-import javax.sound.sampled.*;
 import java.io.File;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
@@ -8,6 +7,15 @@ import java.net.InetAddress;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
+
+import javax.sound.sampled.AudioFormat;
+import javax.sound.sampled.AudioInputStream;
+import javax.sound.sampled.AudioSystem;
+import javax.sound.sampled.DataLine;
+import javax.sound.sampled.FloatControl;
+import javax.sound.sampled.SourceDataLine;
+import javax.sound.sampled.TargetDataLine;
+import javax.sound.sampled.UnsupportedAudioFileException;
 
 public class VoiceClient {
     private volatile boolean isMuted = false;
@@ -54,7 +62,8 @@ public class VoiceClient {
                             java.util.List<String> activeUsers = java.util.Arrays.asList(users.split("\n"));
                             
                             userSpeakers.keySet().removeIf(name -> {
-                                if (!activeUsers.contains(name)) {
+                                // 👇 修正：確保不會誤殺名為 "BGM 🎵" 的虛擬音軌 👇
+                                if (!activeUsers.contains(name) && !name.equals("BGM 🎵")) {
                                     SourceDataLine line = userSpeakers.get(name);
                                     if (line != null) { line.stop(); line.close(); }
                                     userVolumes.remove(name);
@@ -104,7 +113,6 @@ public class VoiceClient {
             byte[] initData = joinMsg.getBytes("UTF-8");
             socket.send(new DatagramPacket(initData, initData.length, hostIP, hostPort));
 
-            // 🌟 修正：加入麥克風防護機制
             try {
                 DataLine.Info micInfo = new DataLine.Info(TargetDataLine.class, format);
                 microphone = (TargetDataLine) AudioSystem.getLine(micInfo);
@@ -125,7 +133,6 @@ public class VoiceClient {
                 } catch (Exception e) {}
             }).start();
 
-            //  修正：麥克風發送迴圈保護
             byte[] micBuffer = new byte[4096];
             while (isRunning) {
                 if (microphone != null) {
@@ -138,7 +145,6 @@ public class VoiceClient {
                         }
                     }
                 } else {
-                   
                     try { Thread.sleep(500); } catch (Exception e) {}
                 }
             }

@@ -58,7 +58,6 @@ public class HostServer {
                         DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                         socket.receive(packet); 
 
-                        
                         String senderKey = packet.getAddress().getHostAddress() + "#" + packet.getPort();
                         String message = new String(packet.getData(), 0, Math.min(packet.getLength(), 100), "UTF-8");
 
@@ -80,8 +79,24 @@ public class HostServer {
                                 clients.get(senderKey).lastActiveTime = System.currentTimeMillis();
                             }
                             continue;
-                        }
+                        // 👇 修正：處理已經包裝好的 BGM 封包 👇
+                        } else if (message.startsWith("[AUDIO]")) {
+                            if (clients.containsKey(senderKey)) {
+                                clients.get(senderKey).lastActiveTime = System.currentTimeMillis();
+                                for (String targetKey : clients.keySet()) {
+                                    if (!targetKey.equals(senderKey)) {
+                                        String[] parts = targetKey.split("#");
+                                        InetAddress targetIp = InetAddress.getByName(parts[0]);
+                                        int targetPort = Integer.parseInt(parts[1]);
+                                        // 直接轉發，不重新包裝
+                                        socket.send(new DatagramPacket(packet.getData(), packet.getLength(), targetIp, targetPort));
+                                    }
+                                }
+                            }
+                            continue;
+                        } // 👆 修正結束 👆
 
+                        // 處理純粹的麥克風音訊，為其包裝標籤與名稱
                         if (clients.containsKey(senderKey)) {
                             ClientInfo senderInfo = clients.get(senderKey);
                             senderInfo.lastActiveTime = System.currentTimeMillis();
@@ -98,7 +113,7 @@ public class HostServer {
 
                             for (String targetKey : clients.keySet()) {
                                 if (!targetKey.equals(senderKey)) {
-                                    String[] parts = targetKey.split("#"); // 🌟 對應上述的 "#"
+                                    String[] parts = targetKey.split("#"); 
                                     InetAddress targetIp = InetAddress.getByName(parts[0]);
                                     int targetPort = Integer.parseInt(parts[1]);
                                     socket.send(new DatagramPacket(forwardBuffer, forwardBuffer.length, targetIp, targetPort));
@@ -138,7 +153,7 @@ public class HostServer {
         byte[] listData = listMsg.getBytes("UTF-8");
 
         for (String clientKey : clients.keySet()) {
-            String[] parts = clientKey.split("#"); // 🌟 對應上述的 "#"
+            String[] parts = clientKey.split("#"); 
             InetAddress targetIp = InetAddress.getByName(parts[0]);
             int targetPort = Integer.parseInt(parts[1]);
             socket.send(new DatagramPacket(listData, listData.length, targetIp, targetPort));
