@@ -90,9 +90,15 @@ public class TuneTalkGUI extends JFrame {
 
         btnCreateRoom.addActionListener(e -> {
             String nickname = nameField.getText().trim();
+            String targetIp = ipField.getText().trim(); 
+    
+            if (targetIp.isEmpty()) {
+                targetIp = "127.0.0.1";
+            }
+    
             isHost = true;
             HostServer.startServer();
-            enterRoom("127.0.0.1", nickname.isEmpty() ? "房主" : nickname);
+            enterRoom(targetIp, nickname.isEmpty() ? "房主" : nickname);
         });
 
         btnJoinRoom.addActionListener(e -> {
