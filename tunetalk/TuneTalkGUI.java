@@ -13,21 +13,21 @@ import java.util.Set;
 public class TuneTalkGUI extends JFrame {
 
     private CardLayout cardLayout;
-    private JPanel mainPanel; 
+    private JPanel mainPanel;
     private JToggleButton btnMute;
 
     private JTextField ipField, nameField;
     private JButton btnCreateRoom, btnJoinRoom;
-    
+
     private JPanel userListPanel;
     private JLabel roomTitleLabel;
     private JButton btnLeaveRoom;
-    
+
     private JLabel selectedFileLabel;
     private JButton btnSelectMusic, btnPauseMusic, btnNextMusic, btnStopMusic;
     private JSlider bgmVolSlider;
 
-    private VoiceClient voiceClient; 
+    private VoiceClient voiceClient;
     private boolean isHost = false;
 
     private TrayIcon trayIcon;
@@ -51,7 +51,7 @@ public class TuneTalkGUI extends JFrame {
         mainPanel.add(createRoomPanel(), "ROOM");
 
         add(mainPanel);
-        cardLayout.show(mainPanel, "LOGIN"); 
+        cardLayout.show(mainPanel, "LOGIN");
     }
 
     private void initSystemTray() {
@@ -119,12 +119,12 @@ public class TuneTalkGUI extends JFrame {
         JPanel bottomContainer = new JPanel(new GridLayout(2, 1, 5, 5));
 
         JPanel musicPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 5, 0));
-        
+
         btnSelectMusic = new JButton("加入音樂(可多選)");
         btnPauseMusic = new JButton("暫停/繼續");
         btnNextMusic = new JButton("下一首");
         btnStopMusic = new JButton("停止");
-        
+
         bgmVolSlider = new JSlider(-40, 6, 0);
         bgmVolSlider.setPreferredSize(new Dimension(80, 20));
         bgmVolSlider.addChangeListener(e -> {
@@ -132,15 +132,17 @@ public class TuneTalkGUI extends JFrame {
                 voiceClient.setBgmVolume(bgmVolSlider.getValue());
             }
         });
-        
+
         selectedFileLabel = new JLabel("目前無播放");
         selectedFileLabel.setPreferredSize(new Dimension(250, 20));
-        
+
         btnSelectMusic.addActionListener(e -> {
             JFileChooser fileChooser = new JFileChooser();
+            File musicDir = new File(System.getProperty("user.dir"), "music");
+            fileChooser.setCurrentDirectory(musicDir);
             fileChooser.setFileFilter(new FileNameExtensionFilter("WAV 音訊檔 (*.wav)", "wav"));
-            fileChooser.setMultiSelectionEnabled(true); 
-            
+            fileChooser.setMultiSelectionEnabled(true);
+
             if (fileChooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
                 File[] selectedFiles = fileChooser.getSelectedFiles();
                 if (selectedFiles.length > 0 && voiceClient != null) {
@@ -162,7 +164,7 @@ public class TuneTalkGUI extends JFrame {
                 voiceClient.playNextTrack();
             }
         });
-        
+
         btnStopMusic.addActionListener(e -> {
             if (voiceClient != null) voiceClient.stopMusicStream();
         });
@@ -187,13 +189,13 @@ public class TuneTalkGUI extends JFrame {
 
         btnLeaveRoom = new JButton("退出房間");
         btnLeaveRoom.addActionListener(e -> leaveRoom());
-        
+
         voicePanel.add(btnMute);
         voicePanel.add(btnLeaveRoom);
 
         bottomContainer.add(musicPanel);
         bottomContainer.add(voicePanel);
-        
+
         panel.add(bottomContainer, BorderLayout.SOUTH);
 
         return panel;
@@ -202,7 +204,7 @@ public class TuneTalkGUI extends JFrame {
     private void updateUserListUI(String usersStr) {
         userListPanel.removeAll();
         Set<String> newUsersList = new HashSet<>();
-        
+
         if (usersStr.trim().isEmpty() || usersStr.contains("暫無使用者")) {
             userListPanel.add(new JLabel(" 房間內暫無其他使用者"));
         } else {
@@ -225,7 +227,7 @@ public class TuneTalkGUI extends JFrame {
                 userListPanel.add(row);
             }
         }
-        
+
         if (!isFirstLoad && trayIcon != null) {
             Set<String> leftUsers = new HashSet<>(knownUsers);
             leftUsers.removeAll(newUsersList);
@@ -241,9 +243,9 @@ public class TuneTalkGUI extends JFrame {
                 }
             }
         }
-        
+
         knownUsers = newUsersList;
-        isFirstLoad = false;       
+        isFirstLoad = false;
         userListPanel.revalidate();
         userListPanel.repaint();
     }
@@ -253,10 +255,10 @@ public class TuneTalkGUI extends JFrame {
         this.knownUsers.clear();
         this.isFirstLoad = true;
         this.lastNotifiedSong = "";
-        
-        voiceClient = new VoiceClient(); 
+
+        voiceClient = new VoiceClient();
         voiceClient.setBgmVolume(bgmVolSlider.getValue());
-        
+
         voiceClient.setOnMusicInfoChange(info -> {
             SwingUtilities.invokeLater(() -> {
                 String status = info[0];
@@ -269,7 +271,7 @@ public class TuneTalkGUI extends JFrame {
                 } else {
                     selectedFileLabel.setText("播放中: " + current + " | 下一首: " + next);
                     btnPauseMusic.setText(status.equals("PAUSE") ? "繼續播放" : "暫停播放");
-                    
+
                     if (trayIcon != null && !current.equals(lastNotifiedSong) && !current.equals("無")) {
                         trayIcon.displayMessage("音樂播放", "開始播放: " + current, TrayIcon.MessageType.INFO);
                         lastNotifiedSong = current;
@@ -288,7 +290,7 @@ public class TuneTalkGUI extends JFrame {
 
     private void leaveRoom() {
         if (voiceClient != null) {
-            voiceClient.stopClient(); 
+            voiceClient.stopClient();
             voiceClient = null;
         }
         if (isHost) {
@@ -300,7 +302,7 @@ public class TuneTalkGUI extends JFrame {
         btnMute.setForeground(UIManager.getColor("Button.foreground"));
         btnPauseMusic.setText("暫停/繼續");
         selectedFileLabel.setText("目前無播放");
-        
+
         userListPanel.removeAll();
         cardLayout.show(mainPanel, "LOGIN");
     }
