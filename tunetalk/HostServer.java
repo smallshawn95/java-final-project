@@ -59,7 +59,7 @@ public class HostServer {
                         socket.receive(packet); 
 
                         String senderKey = packet.getAddress().getHostAddress() + "#" + packet.getPort();
-                        String message = new String(packet.getData(), 0, Math.min(packet.getLength(), 100), "UTF-8");
+                        String message = new String(packet.getData(), 0, Math.min(packet.getLength(), 512), "UTF-8");
 
                         if (message.startsWith("[JOIN]")) {
                             String nickname = message.substring(6).trim();

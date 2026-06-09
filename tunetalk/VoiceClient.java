@@ -70,7 +70,7 @@ public class VoiceClient {
                         int length = packet.getLength();
                         if (length < 7) continue;
 
-                        String possibleText = new String(packet.getData(), 0, Math.min(length, 100), "UTF-8");
+                        String possibleText = new String(packet.getData(), 0, Math.min(length, 512), "UTF-8");
                         
                         if (possibleText.startsWith("[USER_LIST]")) {
                             String users = possibleText.replace("[USER_LIST]", "");
@@ -213,6 +213,11 @@ public class VoiceClient {
                 current = "無";
                 next = "無";
             }
+            
+            if (onMusicInfoChange != null) {
+                onMusicInfoChange.accept(new String[]{status, current, next});
+            }
+
             String msg = "[M_INFO]" + status + "|" + current + "|" + next;
             byte[] data = msg.getBytes("UTF-8");
             if (socket != null && !socket.isClosed() && targetIp != null) {
